@@ -7,7 +7,7 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
     const channel = body.channel || process.env.TELEGRAM_CHANNEL || "cryptoalr";
 
-    const messages = await fetchChannelMessages(channel);
+    const messages = await fetchChannelMessages(channel, { limit: 10 });
     const results = messages.map((m) => {
       const parsed = parseSignal(m.text);
       return {
