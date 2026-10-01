@@ -1,0 +1,95 @@
+// Prisma schema for Crypto Signals Trading Bot
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Telegram signals (raw + parsed)
+model Signal {
+  id            String   @id @default(cuid())
+  telegramId    Int     @unique // ID сообщения в Telegram
+  channelName   String   // например "cryptoalr"
+  rawText       String   // полный текст сообщения
+  // Парсинг
+  symbol        String?  // например "USUSDT"
+  baseAsset     String?  // например "USU" (без USDT)
+  priceAtSignal Float?   // цена указанная в сообщении
+  priceChangePct Float?  // +10.3% из сообщения
+  volumeChangePct Float? // +676.3%
+  isPumpSignal  Boolean  @default(false) // содержит "IS PUMPING"
+  // Связь со сделкой (опционально)
+  tradeId       String?  @unique
+  trade         Trade?   @relation("SignalTrade")
+  // Метаданные
+  detectedAt    DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  @@index([channelName, telegramId])
+  @@index([detectedAt])
+}
+
+// Торговые сделки
+model Trade {
+  id             String   @id @default(cuid())
+  // Связи
+  signalId       String?  @unique
+  // Связь с сигналом (одна связь, FK на Trade)
+  signal         Signal?  @relation("SignalTrade", fields: [signalId], references: [id], onDelete: SetNull)
+  // Binance IDs (заполняется после создания ордера)
+  binanceClientId  Int?    @unique // clientOrderId
+  binanceOrderId   String? // orderId от Binance
+  binancePositionId String? // для трекинга
+  // Параметры сделки
+  symbol         String   // "USUSDT"
+  side           String   // "BUY" (long) или "SELL" (short)
+  leverage       Int      // 75
+  positionSizeUsd Float  // 50.0 USDT (маржа)
+  quantity       Float    // количество контрактов
+  // Цены
+  entryPrice     Float    // цена входа
+  takeProfitPrice Float   // цена TP
+  stopLossPrice  Float    // цена SL
+  exitPrice      Float?   // цена закрытия
+  // P&L
+  pnlUsd        Float?   // прибыль/убыток в USDT
+  pnlPct        Float?   // прибыль/убыток в %
+  // Статус
+  status        String   @default("OPEN") // OPEN, CLOSED, CANCELLED, ERROR
+  closeReason   String?  // TAKE_PROFIT, STOP_LOSS, MANUAL, TIMEOUT, ERROR
+  // Время
+  openedAt      DateTime @default(now())
+  closedAt      DateTime?
+  updatedAt     DateTime @updatedAt
+  // Логи
+  errorMessage   String?
+  isDemo        Boolean  @default(false) // демо-сделка (без реального ордера на Binance)
+
+  @@index([status])
+  @@index([symbol])
+  @@index([openedAt])
+}
+
+// Настройки приложения (key-value)
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+// Логи приложения
+model Log {
+  id        String   @id @default(cuid())
+  level     String   // INFO, WARN, ERROR, DEBUG
+  category  String   // BINANCE, TELEGRAM, WORKER, TRADE, PUSH
+  message   String
+  meta      String?  // JSON строка с дополнительными данными
+  createdAt DateTime @default(now())
+
+  @@index([level, createdAt])
+  @@index([category])
+}
