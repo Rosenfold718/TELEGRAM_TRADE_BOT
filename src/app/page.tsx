@@ -13,6 +13,7 @@ import { SettingsPanel } from "@/components/dashboard/SettingsPanel";
 import { KillSwitch } from "@/components/dashboard/KillSwitch";
 import { LogsPanel } from "@/components/dashboard/LogsPanel";
 import { InfoBanner } from "@/components/dashboard/InfoBanner";
+import { TelegramStatus } from "@/components/dashboard/TelegramStatus";
 import { Bot, Zap } from "lucide-react";
 
 export default function Home() {
@@ -78,6 +79,7 @@ export default function Home() {
             <TradesTable />
           </div>
           <div className="space-y-4">
+            <TelegramStatus />
             <SignalsList />
             <SettingsPanel />
             <LogsPanel />

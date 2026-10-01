@@ -11,7 +11,7 @@
  */
 
 import { db } from "@/lib/db";
-import { fetchChannelMessages, filterNewMessages, TelegramMessage } from "@/lib/telegram";
+import { fetchChannelMessages, getNewMessages } from "@/lib/telegram";
 import { parseSignal, isTradingSignal } from "@/lib/parser";
 import {
   getAccountBalance,
@@ -114,8 +114,8 @@ class WorkerEngine {
       });
       const lastId = lastSignal?.telegramId || 0;
 
-      const messages = await fetchChannelMessages(channel);
-      const newMessages = filterNewMessages(messages, lastId);
+      const messages = await fetchChannelMessages(channel, { limit: 30 });
+      const newMessages = getNewMessages(messages, lastId);
 
       console.log(`[worker] got ${messages.length} msgs, ${newMessages.length} new`);
 
@@ -136,7 +136,7 @@ class WorkerEngine {
     }
   }
 
-  private async processMessage(msg: TelegramMessage, channel: string, settings: AppSettings) {
+  private async processMessage(msg: any, channel: string, settings: AppSettings) {
     const parsed = parseSignal(msg.text);
     console.log(`[worker] msg ${msg.id}: symbol=${parsed.symbol}, pump=${parsed.isPumpSignal}`);
 

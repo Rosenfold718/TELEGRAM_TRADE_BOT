@@ -142,12 +142,31 @@ bun run dev
 
 ### Telegram-канал @cryptoalr
 
-⚠️ Канал `@cryptoalr` (23 подписчика) **не имеет публичной preview-страницы**, поэтому `t.me/s/cryptoalr` возвращает только страницу-пустышку без сообщений. Это означает, что worker не сможет парсить сигналы из этого канала через web scraping.
+⚠️ Канал `@cryptoalr` (23 подписчика) **не имеет публичной preview-страницы**, поэтому `t.me/s/cryptoalr` возвращает только страницу-пустышку без сообщений. Web scraping не сработает.
 
-**Решения**:
-1. Использовать другой публичный канал с preview (например, `@durov` для теста)
-2. Реализовать Telegram User API (нужен `api_id` и `api_hash` с my.telegram.org)
-3. Если у тебя есть доступ к каналу — попросить админа включить "Public Preview"
+**Решение: Telegram User API (MTProto)** — теперь поддержано в приложении:
+
+1. Получи `api_id` и `api_hash` на https://my.telegram.org → API development tools
+2. Заполни `.env`:
+   ```
+   TELEGRAM_API_ID=<твой api_id>
+   TELEGRAM_API_HASH=<твой api_hash>
+   TELEGRAM_METHOD=mtproto
+   ```
+3. Запусти интерактивную авторизацию (один раз):
+   ```bash
+   bun run scripts/telegram-login.ts
+   ```
+   Скрипт спросит номер телефона, код из Telegram/SMS, (опц.) 2FA пароль.
+4. Скопируй выведенную session string в `.env`:
+   ```
+   TELEGRAM_SESSION=<длинная строка>
+   ```
+5. Перезапусти приложение
+
+После этого worker сможет читать любые каналы, где состоит твой аккаунт (включая @cryptoalr).
+
+**Альтернативный метод** — `TELEGRAM_METHOD=scrape` использует web scraping (без авторизации), но работает только для публичных каналов с preview (например, `@durov`).
 
 ### DEMO режим
 

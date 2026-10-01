@@ -13,25 +13,25 @@ export function InfoBanner() {
       <AlertTitle className="text-sm text-amber-700">DEMO режим активен</AlertTitle>
       <AlertDescription className="text-xs text-amber-700/80 space-y-2">
         <p>
-          Сейчас приложение работает с <b>демо-данными</b>: Binance API ключи не настроены, а
-          канал <code className="font-mono text-[11px] bg-amber-500/10 px-1 rounded">@cryptoalr</code> не
-          отдаёт сообщения через публичный preview (только 23 подписчика).
+          Сейчас приложение работает с <b>демо-данными</b>: Binance API ключи не настроены,
+          Telegram MTProto не сконфигурирован (видно в карточке «Telegram» справа).
         </p>
         <p>
           Чтобы запустить реальную торговлю:
         </p>
         <ol className="list-decimal list-inside space-y-1 ml-1">
           <li>
+            Настрой <b>Telegram MTProto</b> — карточка «Telegram» содержит пошаговую инструкцию
+            (получить <code className="font-mono text-[11px] bg-amber-500/10 px-1 rounded">api_id</code>,
+            авторизоваться, скопировать session в <code className="font-mono text-[11px] bg-amber-500/10 px-1 rounded">.env</code>)
+          </li>
+          <li>
             Добавь <code className="font-mono text-[11px] bg-amber-500/10 px-1 rounded">BINANCE_API_KEY</code> и{" "}
-            <code className="font-mono text-[11px] bg-amber-500/10 px-1 rounded">BINANCE_API_SECRET</code> в файл{" "}
+            <code className="font-mono text-[11px] bg-amber-500/10 px-1 rounded">BINANCE_API_SECRET</code> в{" "}
             <code className="font-mono text-[11px] bg-amber-500/10 px-1 rounded">.env</code>
           </li>
           <li>
-            Если у Telegram-канала нет публичной preview-страницы — используй публичный канал или
-            подмени канал в настройках (например, <code className="font-mono text-[11px] bg-amber-500/10 px-1 rounded">durov</code>)
-          </li>
-          <li>
-            Включи тумблер «Торговля включена» в настройках
+            Включи тумблер «Торговля включена» в Настройках
           </li>
           <li>
             Нажми «Start» в Worker — приложение начнёт парсить Telegram и открывать сделки
