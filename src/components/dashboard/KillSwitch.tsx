@@ -8,10 +8,10 @@ import { useApi } from "@/hooks/use-api";
 import { BinanceAccountResponse } from "@/lib/types";
 import { useState } from "react";
 import { toast } from "sonner";
-import { AlertTriangle, Bomb, CheckCircle2, XCircle } from "lucide-react";
+import { AlertTriangle, Bomb, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
 
 export function KillSwitch() {
-  const { data, refetch } = useApi<BinanceAccountResponse>("/api/binance/account", { intervalMs: 5000 });
+  const { data, refetch } = useApi<BinanceAccountResponse>("/api/binance/account", { intervalMs: 30000 });
   const [closing, setClosing] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
@@ -42,6 +42,8 @@ export function KillSwitch() {
 
   const hasOpenPositions = (data?.summary?.openPositionsCount || 0) > 0;
   const demo = data?.demo;
+  const isBanned = data?.connectivity?.error?.includes("banned") || data?.error?.includes("banned");
+  const hasError = (data?.connectivity && !data.connectivity.ok && !demo) || data?.error;
 
   return (
     <Card>
@@ -57,21 +59,35 @@ export function KillSwitch() {
             <span className="text-muted-foreground">Binance connection:</span>
             {demo ? (
               <Badge variant="outline" className="text-amber-600 border-amber-600/30">DEMO</Badge>
+            ) : hasError ? (
+              <Badge variant="outline" className="text-red-600 border-red-600/30 flex items-center gap-1">
+                <XCircle className="h-3 w-3" /> ERROR
+              </Badge>
             ) : data?.connectivity?.ok ? (
               <Badge variant="outline" className="text-emerald-600 border-emerald-600/30 flex items-center gap-1">
                 <CheckCircle2 className="h-3 w-3" /> LIVE
               </Badge>
-            ) : (
-              <Badge variant="outline" className="text-red-600 border-red-600/30 flex items-center gap-1">
-                <XCircle className="h-3 w-3" /> ERROR
-              </Badge>
-            )}
+            ) : null}
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">Open positions:</span>
             <span className="tabular-nums font-semibold">{data?.summary?.openPositionsCount || 0}</span>
           </div>
         </div>
+
+        {hasError && !demo && (
+          <Alert className="border-red-500/20 bg-red-500/5 py-2">
+            <AlertTriangle className="h-3.5 w-3.5 text-red-600" />
+            <AlertTitle className="text-xs text-red-700">
+              {isBanned ? "IP заблокирован" : "Binance недоступен"}
+            </AlertTitle>
+            <AlertDescription className="text-[11px] text-red-700/80">
+              {isBanned
+                ? "IP временно забанен Binance. На Vercel IP будет другой — там заработает."
+                : data?.connectivity?.error || data?.error}
+            </AlertDescription>
+          </Alert>
+        )}
 
         <Button
           onClick={handleKill}

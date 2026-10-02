@@ -45,6 +45,7 @@ export interface BinanceAccountResponse {
     unrealizedPnl: number;
     openPositionsCount: number;
   };
+  error?: string;
 }
 
 export interface Signal {
