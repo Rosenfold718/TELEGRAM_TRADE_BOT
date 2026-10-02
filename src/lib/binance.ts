@@ -10,6 +10,7 @@
  */
 
 import crypto from "crypto";
+import { cached } from "@/lib/cache";
 
 const MAINNET_BASE = "https://fapi.binance.com";
 const TESTNET_BASE = "https://testnet.binancefuture.com";
@@ -206,8 +207,15 @@ export async function getSymbolInfo(symbol: string): Promise<BinanceSymbolInfo |
     return DEMO_SYMBOLS.find((s) => s.symbol === symbol.toUpperCase()) || null;
   }
   try {
-    const data = await binanceRequest<{ symbols: any[] }>("/fapi/v1/exchangeInfo");
-    const found = data.symbols.find((s) => s.symbol === symbol.toUpperCase());
+    const symbolsMap = await cached("binance:exchangeInfo", 5 * 60_000, async () => {
+      const data = await binanceRequest<{ symbols: any[] }>("/fapi/v1/exchangeInfo");
+      const map = new Map<string, any>();
+      for (const s of data.symbols) {
+        map.set(s.symbol, s);
+      }
+      return map;
+    });
+    const found = symbolsMap.get(symbol.toUpperCase());
     if (!found) return null;
     const priceFilter = found.filters?.find((f: any) => f.filterType === "PRICE_FILTER");
     const lotSize = found.filters?.find((f: any) => f.filterType === "LOT_SIZE");
@@ -232,11 +240,13 @@ export async function getTickerPrice(symbol: string): Promise<BinanceTickerPrice
   if (!isBinanceConfigured()) {
     return { symbol, price: demoPrice(symbol), time: Date.now() };
   }
-  const data = await binanceRequest<{ symbol: string; price: string; time: number }>(
-    "/fapi/v1/ticker/price",
-    { symbol }
-  );
-  return { symbol: data.symbol, price: parseFloat(data.price), time: data.time };
+  return cached(`binance:ticker:${symbol.toUpperCase()}`, 5_000, async () => {
+    const data = await binanceRequest<{ symbol: string; price: string; time: number }>(
+      "/fapi/v1/ticker/price",
+      { symbol }
+    );
+    return { symbol: data.symbol, price: parseFloat(data.price), time: data.time };
+  });
 }
 
 // ===== Авторизованные методы (с подписью) =====
@@ -250,15 +260,19 @@ export async function getAccountBalance(): Promise<BinanceBalance[]> {
       availableBalance: b.availableBalance + (Math.random() - 0.5) * 50,
     }));
   }
-  const data = await binanceRequest<any[]>("/fapi/v2/balance", {}, "GET", true);
-  return data.map((d) => ({
-    asset: d.asset,
-    walletBalance: parseFloat(d.walletBalance),
-    availableBalance: parseFloat(d.availableBalance),
-    marginBalance: parseFloat(d.marginBalance),
-    maxWithdrawAmount: parseFloat(d.maxWithdrawAmount),
-    crossWalletBalance: parseFloat(d.crossWalletBalance),
-  }));
+  return cached("binance:balance", 15_000, async () => {
+    const data = await binanceRequest<any[]>("/fapi/v2/balance", {}, "GET", true);
+    return data
+      .map((d) => ({
+        asset: d.asset,
+        walletBalance: d.walletBalance !== null ? parseFloat(d.walletBalance) : 0,
+        availableBalance: d.availableBalance !== null ? parseFloat(d.availableBalance) : 0,
+        marginBalance: d.marginBalance !== null ? parseFloat(d.marginBalance) : 0,
+        maxWithdrawAmount: d.maxWithdrawAmount !== null ? parseFloat(d.maxWithdrawAmount) : 0,
+        crossWalletBalance: d.crossWalletBalance !== null ? parseFloat(d.crossWalletBalance) : 0,
+      }))
+      .filter((b) => b.walletBalance > 0 || b.availableBalance > 0 || b.marginBalance > 0);
+  });
 }
 
 export async function getPositions(): Promise<BinancePosition[]> {
@@ -283,20 +297,22 @@ export async function getPositions(): Promise<BinancePosition[]> {
       };
     });
   }
-  const data = await binanceRequest<any[]>("/fapi/v2/positionRisk", {}, "GET", true);
-  return data
-    .filter((d) => parseFloat(d.positionAmt) !== 0)
-    .map((d) => ({
-      symbol: d.symbol,
-      positionAmt: parseFloat(d.positionAmt),
-      entryPrice: parseFloat(d.entryPrice),
-      markPrice: parseFloat(d.markPrice),
-      unRealizedProfit: parseFloat(d.unRealizedProfit),
-      liquidationPrice: parseFloat(d.liquidationPrice),
-      leverage: parseInt(d.leverage, 10),
-      maxNotionalValue: parseFloat(d.maxNotionalValue),
-      positionSide: d.positionSide,
-    }));
+  return cached("binance:positions", 10_000, async () => {
+    const data = await binanceRequest<any[]>("/fapi/v2/positionRisk", {}, "GET", true);
+    return data
+      .filter((d) => parseFloat(d.positionAmt) !== 0)
+      .map((d) => ({
+        symbol: d.symbol,
+        positionAmt: parseFloat(d.positionAmt),
+        entryPrice: parseFloat(d.entryPrice),
+        markPrice: parseFloat(d.markPrice),
+        unRealizedProfit: parseFloat(d.unRealizedProfit),
+        liquidationPrice: parseFloat(d.liquidationPrice),
+        leverage: parseInt(d.leverage, 10),
+        maxNotionalValue: parseFloat(d.maxNotionalValue),
+        positionSide: d.positionSide,
+      }));
+  });
 }
 
 export async function setLeverage(symbol: string, leverage: number): Promise<any> {
@@ -358,14 +374,16 @@ export async function closePosition(symbol: string, side: "BUY" | "SELL"): Promi
 }
 
 export async function testConnectivity(): Promise<{ ok: boolean; testnet: boolean; demo: boolean; latencyMs?: number; error?: string }> {
-  const start = Date.now();
-  try {
-    if (!isBinanceConfigured()) {
-      return { ok: true, testnet: false, demo: true, latencyMs: Date.now() - start };
+  return cached("binance:ping", 30_000, async () => {
+    const start = Date.now();
+    try {
+      if (!isBinanceConfigured()) {
+        return { ok: true, testnet: false, demo: true, latencyMs: Date.now() - start };
+      }
+      await binanceRequest("/fapi/v1/ping");
+      return { ok: true, testnet: process.env.BINANCE_TESTNET === "true", demo: false, latencyMs: Date.now() - start };
+    } catch (e: any) {
+      return { ok: false, testnet: false, demo: false, error: e.message };
     }
-    await binanceRequest("/fapi/v1/ping");
-    return { ok: true, testnet: process.env.BINANCE_TESTNET === "true", demo: false, latencyMs: Date.now() - start };
-  } catch (e: any) {
-    return { ok: false, testnet: false, demo: false, error: e.message };
-  }
+  });
 }
