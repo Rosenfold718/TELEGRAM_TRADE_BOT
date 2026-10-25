@@ -1,0 +1,23 @@
+# Не деплоить на Vercel
+.zscripts/
+db/
+download/
+upload/
+skills/
+tests/
+examples/
+mini-services/
+dev.log
+server.log
+*.log
+node_modules/
+.next/
+scripts/seed-demo.ts
+scripts/turso-migrate.ts
+scripts/seed-turso.ts
+scripts/telegram-login.ts
+scripts/restore-env.sh
+scripts/vercel-env-setup.sh
+README.md
+.gitignore
+.gitattributes
