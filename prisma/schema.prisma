@@ -1,12 +1,15 @@
 // Prisma schema for Crypto Signals Trading Bot
+// Использует libSQL (Turso) — совместим с SQLite, работает в облаке
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "sqlite"
+  // Prisma CLI требует валидный URL. Реальное подключение через adapter в src/lib/db.ts.
+  url       = "file:/home/z/my-project/db/dummy.db"
 }
 
 // Telegram signals (raw + parsed)

@@ -1,2 +1,58 @@
-skills/
+# ===== Секреты (НИКОГДА не коммитить) =====
+.env
+.env.local
+.env.production
+.env.*.local
+
+# ===== Локальная SQLite база данных =====
+db/
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# ===== Next.js =====
+.next/
+out/
+build/
+dist/
+
+# ===== Зависимости =====
 node_modules/
+.pnp
+.pnp.js
+
+# ===== Тесты =====
+coverage/
+
+# ===== Логи =====
+*.log
+dev.log
+server.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ===== IDE / OS =====
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
+*~
+Thumbs.db
+
+# ===== Sandbox / temp =====
+.zscripts/
+upload/
+download/
+skills/
+*.tmp
+.cache/
+
+# ===== Misc =====
+.next/cache
+.turbo
+*.tsbuildinfo
+next-env.d.ts
