@@ -14,7 +14,8 @@ import { KillSwitch } from "@/components/dashboard/KillSwitch";
 import { LogsPanel } from "@/components/dashboard/LogsPanel";
 import { InfoBanner } from "@/components/dashboard/InfoBanner";
 import { TelegramStatus } from "@/components/dashboard/TelegramStatus";
-import { Bot, Zap } from "lucide-react";
+import { Bot, Zap, Network } from "lucide-react";
+import Link from "next/link";
 
 export default function Home() {
   // Регистрация Service Worker для push уведомлений
@@ -49,6 +50,12 @@ export default function Home() {
               <Zap className="h-3 w-3 text-amber-500" />
               <span className="text-muted-foreground hidden sm:inline">USDT-M Futures</span>
             </div>
+            <Link href="/map" className="ml-2">
+              <button className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded border border-border hover:border-foreground/30">
+                <Network className="h-3 w-3" />
+                <span className="hidden sm:inline">Карта проекта</span>
+              </button>
+            </Link>
           </div>
         </div>
       </header>
