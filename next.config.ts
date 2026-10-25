@@ -1,9 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Vercel сам управляет output, не нужно standalone
-  // (но оставляем для локальной сборки через `bun run build`)
-  output: process.env.VERCEL ? undefined : "standalone",
+  // Vercel сам управляет output, не используем standalone
+  // (локально можно собрать с standalone через `bun run build:standalone`)
   typescript: {
     ignoreBuildErrors: true,
   },
