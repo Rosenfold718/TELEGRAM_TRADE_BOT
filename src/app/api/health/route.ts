@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { isBinanceConfigured, testConnectivity } from "@/lib/binance";
 import { isTelegramConfigured, getTelegramMethod, testTelegramConnection } from "@/lib/telegram";
-import { db } from "@/lib/db";
+import { db, isDbAvailable, getDbError } from "@/lib/db";
 
 /**
  * GET /api/health
@@ -86,21 +86,28 @@ export async function GET() {
   try {
     const databaseUrl = process.env.DATABASE_URL || "";
     const isTurso = databaseUrl.startsWith("libsql://") || databaseUrl.startsWith("libsqls://");
+
+    // Сначала проверяем — доступен ли клиент БД вообще
+    const dbAvailable = isDbAvailable();
     let signalCount = 0,
       tradeCount = 0,
       settingCount = 0,
       logCount = 0;
     let dbConnected = false;
-    let dbError = null;
-    try {
-      tradeCount = await db.trade.count();
-      signalCount = await db.signal.count();
-      settingCount = await db.setting.count();
-      logCount = await db.log.count();
-      dbConnected = true;
-    } catch (e: any) {
-      dbError = e.message;
+    let dbError = dbAvailable ? null : getDbError();
+
+    if (dbAvailable) {
+      try {
+        tradeCount = await db.trade.count();
+        signalCount = await db.signal.count();
+        settingCount = await db.setting.count();
+        logCount = await db.log.count();
+        dbConnected = true;
+      } catch (e: any) {
+        dbError = e.message;
+      }
     }
+
     checks.components.database = {
       label: isTurso ? "Turso (libSQL)" : "Local SQLite",
       type: isTurso ? "turso" : "sqlite",
@@ -108,9 +115,11 @@ export async function GET() {
       connected: dbConnected,
       error: dbError,
       counts: { trades: tradeCount, signals: signalCount, settings: settingCount, logs: logCount },
-      status: dbConnected ? "ok" : "error",
+      status: dbConnected ? "ok" : databaseUrl ? "error" : "warning",
       statusLabel: dbConnected
         ? `${isTurso ? "Turso" : "SQLite"} подключен (${tradeCount} trades, ${signalCount} signals)`
+        : !databaseUrl
+        ? "DATABASE_URL не задан (нужно добавить в Vercel env vars)"
         : `Ошибка: ${dbError}`,
     };
   } catch (e: any) {
