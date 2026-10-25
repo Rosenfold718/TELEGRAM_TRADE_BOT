@@ -123,73 +123,83 @@ const statusIcon = (status: string) => {
   }
 };
 
+// ===== Утилита для безопасного текста узлов Mermaid =====
+// Mermaid mindmap синтаксис очень строгий:
+//  - Двоеточия используются для классов → нужно убрать
+//  - Круглые скобки — особый синтаксис → нужно убрать
+//  - Слэши в "Turso/libSQL" тоже ломают парсер
+//  - Запятые в числах "1,234.56" — лучше убрать
+//  - Дефисы в начале строки могут ломать парсер
+function sanitize(text: string): string {
+  return String(text || "")
+    .replace(/[:()\\\/,]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 50);
+}
+
 // ===== Генерация Mermaid mind map =====
+// ВАЖНО: в mindmap синтаксисе classDef НЕ работает!
+// Только базовые узлы + иконки. Цвета применяем через CSS после рендера.
 function generateMermaid(data: HealthResponse): string {
   const c = data.components;
   const lines: string[] = ["mindmap"];
 
-  // Корень — проект
-  lines.push("  root((Crypto Signals\nTrader))");
+  // Корень — проект (используем круглую форму root((..)))
+  lines.push("  root((Crypto Signals Trader))");
 
   // Binance
   lines.push("    Binance Futures");
-  const binanceStatus = c.binance?.status || "warning";
-  lines.push(`      Binance:::${binanceStatus === "ok" ? "okn" : binanceStatus === "banned" ? "bannedn" : "warnn"}`);
   if (c.binance) {
-    lines.push(`      Mode: ${c.binance.mode}`);
-    lines.push(`      ${c.binance.statusLabel}`);
+    lines.push(`      Mode ${sanitize(c.binance.mode)}`);
+    lines.push(`      ${sanitize(c.binance.statusLabel)}`);
   }
 
   // Telegram
-  lines.push("    Telegram MTProto");
-  const tgStatus = c.telegram?.status || "warning";
-  lines.push(`      Telegram:::${tgStatus === "ok" ? "okn" : "warnn"}`);
+  lines.push("    Telegram");
   if (c.telegram) {
-    lines.push(`      Method: ${c.telegram.method}`);
-    lines.push(`      ${c.telegram.statusLabel}`);
+    lines.push(`      Method ${sanitize(c.telegram.method)}`);
+    lines.push(`      ${sanitize(c.telegram.statusLabel)}`);
   }
 
   // Database
   lines.push("    Database");
-  const dbStatus = c.database?.status || "error";
-  lines.push(`      Database:::${dbStatus === "ok" ? "okn" : "errn"}`);
   if (c.database) {
-    lines.push(`      Type: ${c.database.type}`);
-    lines.push(`      ${c.database.statusLabel}`);
+    lines.push(`      Type ${sanitize(c.database.type)}`);
+    if (c.database.counts) {
+      lines.push(`      Trades ${c.database.counts.trades}`);
+      lines.push(`      Signals ${c.database.counts.signals}`);
+      lines.push(`      Logs ${c.database.counts.logs}`);
+    }
+    lines.push(`      ${sanitize(c.database.statusLabel)}`);
   }
 
   // Worker
   lines.push("    Background Worker");
-  lines.push("      Worker:::warnn");
   if (c.worker) {
-    lines.push(`      Poll: ${c.worker.pollIntervalSec}s`);
-    lines.push(`      Check: ${c.worker.checkIntervalSec}s`);
-    lines.push(`      ${c.worker.statusLabel}`);
+    lines.push(`      Poll ${c.worker.pollIntervalSec}s`);
+    lines.push(`      Check ${c.worker.checkIntervalSec}s`);
+    lines.push(`      ${sanitize(c.worker.statusLabel)}`);
   }
 
   // Trading
   lines.push("    Auto Trading");
-  const trStatus = c.trading?.status || "warning";
-  lines.push(`      Trading:::${trStatus === "ok" ? "okn" : "warnn"}`);
   if (c.trading) {
-    lines.push(`      Leverage: ${c.trading.leverage}x`);
-    lines.push(`      Position: ${c.trading.positionSizePct}%`);
-    lines.push(`      TP/SL: +${c.trading.takeProfitPct}% / -${c.trading.stopLossPct}%`);
-    lines.push(`      ${c.trading.statusLabel}`);
+    lines.push(`      Leverage ${c.trading.leverage}x`);
+    lines.push(`      Position ${c.trading.positionSizePct}pct`);
+    lines.push(`      TP +${c.trading.takeProfitPct}pct`);
+    lines.push(`      SL -${c.trading.stopLossPct}pct`);
+    lines.push(`      ${sanitize(c.trading.statusLabel)}`);
   }
 
   // UI Dashboard
   lines.push("    UI Dashboard");
-  lines.push("      UI:::okn");
-  lines.push("      Balance / Stats / Charts");
-  lines.push("      Trades / Signals / Logs");
-  lines.push("      Settings / Kill Switch");
+  lines.push("      Balance and Stats");
+  lines.push("      Trades and Signals");
+  lines.push("      Settings and Kill Switch");
 
-  // Class definitions
-  lines.push("  class okn fill:#10b981,stroke:#059669,color:#fff");
-  lines.push("  class warnn fill:#f59e0b,stroke:#d97706,color:#fff");
-  lines.push("  class bannedn fill:#ef4444,stroke:#dc2626,color:#fff");
-  lines.push("  class errn fill:#ef4444,stroke:#dc2626,color:#fff");
+  // БЕЗ classDef — в mindmap синтаксисе это не работает!
+  // Цвета применяем через CSS, пост-обработкой SVG.
 
   return lines.join("\n");
 }
@@ -199,29 +209,10 @@ export default function MapPage() {
   const { data, loading, error, refetch } = useApi<HealthResponse>("/api/health", { intervalMs: 15000 });
   const [refreshing, setRefreshing] = useState(false);
   const [mermaidSvg, setMermaidSvg] = useState<string>("");
+  const [mermaidError, setMermaidError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Рендерим Mermaid
-  useEffect(() => {
-    if (!data) return;
-    let cancelled = false;
-
-    async function render() {
-      try {
-        const id = "mermaid-mindmap-" + Date.now();
-        const code = generateMermaid(data);
-        const { svg } = await meridian.render(id, code);
-        if (!cancelled) setMermaidSvg(svg);
-      } catch (e: any) {
-        console.error("[mermaid] render failed:", e);
-      }
-    }
-    render();
-    return () => {
-      cancelled = true;
-    };
-  }, [data]);
-
+  // Инициализация Mermaid (один раз)
   useEffect(() => {
     meridian.initialize({
       startOnLoad: false,
@@ -238,8 +229,40 @@ export default function MapPage() {
         padding: 16,
         maxNodeWidth: 220,
       },
+      // ВАЖНО: securityLevel 'loose' позволяет использовать HTML в узлах и классы
+      securityLevel: "loose",
     });
   }, []);
+
+  // Рендерим Mermaid при изменении data
+  useEffect(() => {
+    if (!data) return;
+    let cancelled = false;
+
+    async function render() {
+      setMermaidError(null);
+      try {
+        const id = "mermaid-mindmap-" + Date.now();
+        const code = generateMermaid(data);
+        console.log("[mermaid] code:\n", code);
+        const { svg } = await meridian.render(id, code);
+        if (!cancelled) {
+          setMermaidSvg(svg);
+          setMermaidError(null);
+        }
+      } catch (e: any) {
+        console.error("[mermaid] render failed:", e.message);
+        if (!cancelled) {
+          setMermaidError(e.message);
+          setMermaidSvg(""); // очистить SVG
+        }
+      }
+    }
+    render();
+    return () => {
+      cancelled = true;
+    };
+  }, [data]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -345,13 +368,29 @@ export default function MapPage() {
           <CardContent>
             {loading && !data ? (
               <Skeleton className="h-96 w-full" />
-            ) : (
+            ) : mermaidError ? (
+              <Alert className="border-amber-600/20 bg-amber-500/5">
+                <AlertTriangle className="h-4 w-4 text-amber-600" />
+                <AlertTitle className="text-sm text-amber-700">
+                  Mind map временно недоступен
+                </AlertTitle>
+                <AlertDescription className="text-xs text-amber-700/80 space-y-1">
+                  <p>Ошибка рендера Mermaid: {mermaidError}</p>
+                  <p className="mt-2">
+                    Не переживай — все компоненты и статусы показаны ниже в карточках.
+                    Mind map — это просто визуализация, остальная информация доступна.
+                  </p>
+                </AlertDescription>
+              </Alert>
+            ) : mermaidSvg ? (
               <div
                 ref={containerRef}
                 className="w-full overflow-x-auto flex justify-center"
                 dangerouslySetInnerHTML={{ __html: mermaidSvg }}
                 style={{ minHeight: 400 }}
               />
+            ) : (
+              <Skeleton className="h-96 w-full" />
             )}
           </CardContent>
         </Card>
