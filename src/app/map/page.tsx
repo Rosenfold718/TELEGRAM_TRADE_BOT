@@ -1,96 +1,60 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import meridian from "mermaid";
-import { useApi } from "@/hooks/use-api";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useEffect, useState } from "react";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { CheckCircle2, AlertTriangle, XCircle, RefreshCw, Home, FileJson, ExternalLink, Boxes, Network, ListChecks } from "lucide-react";
+import {
+  CheckCircle2,
+  AlertTriangle,
+  XCircle,
+  RefreshCw,
+  Home,
+  ExternalLink,
+  Boxes,
+  Network,
+  ListChecks,
+  Server,
+  Activity,
+  Cpu,
+} from "lucide-react";
 import Link from "next/link";
+import { useApi } from "@/hooks/use-api";
 import { toast } from "sonner";
+import { InteractiveGraph } from "@/components/dashboard/InteractiveGraph";
 
 // ===== Типы =====
 interface HealthResponse {
   timestamp: string;
   components: {
-    binance?: {
-      label: string;
-      configured: boolean;
-      mode: string;
-      connected: boolean;
-      latencyMs?: number;
-      error?: string;
-      status: "ok" | "warning" | "banned" | "error";
-      statusLabel: string;
-    };
-    telegram?: {
-      label: string;
-      configured: boolean;
-      method: string;
-      connected: boolean;
-      me?: { firstName: string; username?: string } | null;
-      error?: string;
-      status: "ok" | "warning" | "error";
-      statusLabel: string;
-    };
-    database?: {
-      label: string;
-      type: string;
-      url: string;
-      connected: boolean;
-      error?: string;
-      counts: { trades: number; signals: number; settings: number; logs: number };
-      status: "ok" | "error";
-      statusLabel: string;
-    };
-    worker?: {
-      label: string;
-      pollIntervalSec: number;
-      checkIntervalSec: number;
-      status: "ok";
-      statusLabel: string;
-    };
-    trading?: {
-      label: string;
-      enabled: boolean;
-      leverage: number;
-      positionSizePct: number;
-      takeProfitPct: number;
-      stopLossPct: number;
-      status: "ok" | "warning";
-      statusLabel: string;
-    };
+    binance?: ComponentInfo;
+    telegram?: ComponentInfo;
+    database?: ComponentInfo;
+    worker?: ComponentInfo;
+    trading?: ComponentInfo;
+    [key: string]: any;
   };
-  checklist: {
-    id: string;
-    label: string;
-    status: "done" | "pending" | "warning";
-    description: string;
-    action?: string;
-  }[];
+  checklist: ChecklistItem[];
+}
+
+interface ComponentInfo {
+  label: string;
+  status: "ok" | "warning" | "banned" | "error";
+  statusLabel: string;
+  [key: string]: any;
+}
+
+interface ChecklistItem {
+  id: string;
+  label: string;
+  status: "done" | "pending" | "warning";
+  description: string;
+  action?: string;
 }
 
 // ===== Утилиты =====
-const statusColor = (status: string) => {
-  switch (status) {
-    case "ok":
-    case "done":
-      return "#10b981"; // emerald-500
-    case "warning":
-    case "pending":
-      return "#f59e0b"; // amber-500
-    case "banned":
-      return "#ef4444"; // red-500
-    case "error":
-      return "#ef4444";
-    default:
-      return "#94a3b8"; // slate-400
-  }
-};
-
 const statusBg = (status: string) => {
   switch (status) {
     case "ok":
@@ -103,7 +67,7 @@ const statusBg = (status: string) => {
     case "error":
       return "bg-red-500/10 border-red-600/30";
     default:
-      return "bg-muted border-border";
+      return "bg-slate-700/30 border-slate-600/30";
   }
 };
 
@@ -111,158 +75,22 @@ const statusIcon = (status: string) => {
   switch (status) {
     case "ok":
     case "done":
-      return <CheckCircle2 className="h-4 w-4 text-emerald-600" />;
+      return <CheckCircle2 className="h-4 w-4 text-emerald-400" />;
     case "warning":
     case "pending":
-      return <AlertTriangle className="h-4 w-4 text-amber-600" />;
+      return <AlertTriangle className="h-4 w-4 text-amber-400" />;
     case "banned":
     case "error":
-      return <XCircle className="h-4 w-4 text-red-600" />;
+      return <XCircle className="h-4 w-4 text-red-400" />;
     default:
       return null;
   }
 };
 
-// ===== Утилита для безопасного текста узлов Mermaid =====
-// Mermaid mindmap синтаксис очень строгий:
-//  - Двоеточия используются для классов → нужно убрать
-//  - Круглые скобки — особый синтаксис → нужно убрать
-//  - Слэши в "Turso/libSQL" тоже ломают парсер
-//  - Запятые в числах "1,234.56" — лучше убрать
-//  - Дефисы в начале строки могут ломать парсер
-function sanitize(text: string): string {
-  return String(text || "")
-    .replace(/[:()\\\/,]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 50);
-}
-
-// ===== Генерация Mermaid mind map =====
-// ВАЖНО: в mindmap синтаксисе classDef НЕ работает!
-// Только базовые узлы + иконки. Цвета применяем через CSS после рендера.
-function generateMermaid(data: HealthResponse): string {
-  const c = data.components;
-  const lines: string[] = ["mindmap"];
-
-  // Корень — проект (используем круглую форму root((..)))
-  lines.push("  root((Crypto Signals Trader))");
-
-  // Binance
-  lines.push("    Binance Futures");
-  if (c.binance) {
-    lines.push(`      Mode ${sanitize(c.binance.mode)}`);
-    lines.push(`      ${sanitize(c.binance.statusLabel)}`);
-  }
-
-  // Telegram
-  lines.push("    Telegram");
-  if (c.telegram) {
-    lines.push(`      Method ${sanitize(c.telegram.method)}`);
-    lines.push(`      ${sanitize(c.telegram.statusLabel)}`);
-  }
-
-  // Database
-  lines.push("    Database");
-  if (c.database) {
-    lines.push(`      Type ${sanitize(c.database.type)}`);
-    if (c.database.counts) {
-      lines.push(`      Trades ${c.database.counts.trades}`);
-      lines.push(`      Signals ${c.database.counts.signals}`);
-      lines.push(`      Logs ${c.database.counts.logs}`);
-    }
-    lines.push(`      ${sanitize(c.database.statusLabel)}`);
-  }
-
-  // Worker
-  lines.push("    Background Worker");
-  if (c.worker) {
-    lines.push(`      Poll ${c.worker.pollIntervalSec}s`);
-    lines.push(`      Check ${c.worker.checkIntervalSec}s`);
-    lines.push(`      ${sanitize(c.worker.statusLabel)}`);
-  }
-
-  // Trading
-  lines.push("    Auto Trading");
-  if (c.trading) {
-    lines.push(`      Leverage ${c.trading.leverage}x`);
-    lines.push(`      Position ${c.trading.positionSizePct}pct`);
-    lines.push(`      TP +${c.trading.takeProfitPct}pct`);
-    lines.push(`      SL -${c.trading.stopLossPct}pct`);
-    lines.push(`      ${sanitize(c.trading.statusLabel)}`);
-  }
-
-  // UI Dashboard
-  lines.push("    UI Dashboard");
-  lines.push("      Balance and Stats");
-  lines.push("      Trades and Signals");
-  lines.push("      Settings and Kill Switch");
-
-  // БЕЗ classDef — в mindmap синтаксисе это не работает!
-  // Цвета применяем через CSS, пост-обработкой SVG.
-
-  return lines.join("\n");
-}
-
-// ===== Компонент =====
+// ===== Главный компонент =====
 export default function MapPage() {
   const { data, loading, error, refetch } = useApi<HealthResponse>("/api/health", { intervalMs: 15000 });
   const [refreshing, setRefreshing] = useState(false);
-  const [mermaidSvg, setMermaidSvg] = useState<string>("");
-  const [mermaidError, setMermaidError] = useState<string | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  // Инициализация Mermaid (один раз)
-  useEffect(() => {
-    meridian.initialize({
-      startOnLoad: false,
-      theme: "default",
-      themeVariables: {
-        fontFamily: "Geist, system-ui, sans-serif",
-        fontSize: "13px",
-        primaryColor: "#f1f5f9",
-        primaryTextColor: "#0f172a",
-        primaryBorderColor: "#cbd5e1",
-        lineColor: "#94a3b8",
-      },
-      mindmap: {
-        padding: 16,
-        maxNodeWidth: 220,
-      },
-      // ВАЖНО: securityLevel 'loose' позволяет использовать HTML в узлах и классы
-      securityLevel: "loose",
-    });
-  }, []);
-
-  // Рендерим Mermaid при изменении data
-  useEffect(() => {
-    if (!data) return;
-    let cancelled = false;
-
-    async function render() {
-      setMermaidError(null);
-      try {
-        const id = "mermaid-mindmap-" + Date.now();
-        const code = generateMermaid(data);
-        console.log("[mermaid] code:\n", code);
-        const { svg } = await meridian.render(id, code);
-        if (!cancelled) {
-          setMermaidSvg(svg);
-          setMermaidError(null);
-        }
-      } catch (e: any) {
-        console.error("[mermaid] render failed:", e.message);
-        if (!cancelled) {
-          setMermaidError(e.message);
-          setMermaidSvg(""); // очистить SVG
-        }
-      }
-    }
-    render();
-    return () => {
-      cancelled = true;
-    };
-  }, [data]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -279,26 +107,50 @@ export default function MapPage() {
   const checklistPct = checklistTotal > 0 ? (checklistDone / checklistTotal) * 100 : 0;
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div
+      className="min-h-screen text-slate-100"
+      style={{
+        background: `
+          radial-gradient(circle at 0% 0%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
+          radial-gradient(circle at 100% 100%, rgba(16, 185, 129, 0.06) 0%, transparent 50%),
+          #0f172a
+        `,
+      }}
+    >
       {/* Header */}
-      <header className="border-b bg-background/95 backdrop-blur sticky top-0 z-40">
+      <header className="border-b border-slate-800 bg-slate-950/80 backdrop-blur-md sticky top-0 z-40">
         <div className="container mx-auto max-w-7xl px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <Network className="h-5 w-5 text-amber-600" />
+            <div className="relative">
+              <div className="absolute inset-0 bg-cyan-500 blur-md opacity-30 rounded-full" />
+              <Network className="relative h-5 w-5 text-cyan-400" />
+            </div>
             <div>
-              <h1 className="text-sm sm:text-base font-bold tracking-tight">Карта проекта</h1>
-              <p className="text-[10px] text-muted-foreground hidden sm:block">
-                Архитектура, зависимости и чек-лист готовности
+              <h1 className="text-sm sm:text-base font-bold tracking-tight text-slate-100">
+                Карта проекта
+              </h1>
+              <p className="text-[10px] text-slate-400 hidden sm:block">
+                Интерактивная архитектура · Live статус компонентов
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button onClick={handleRefresh} disabled={refreshing} variant="outline" size="sm">
+            <Button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              variant="outline"
+              size="sm"
+              className="bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 hover:text-white"
+            >
               <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${refreshing ? "animate-spin" : ""}`} />
               Обновить
             </Button>
             <Link href="/">
-              <Button variant="ghost" size="sm">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-slate-300 hover:text-white hover:bg-slate-800"
+              >
                 <Home className="h-3.5 w-3.5 mr-1.5" />
                 Дашборд
               </Button>
@@ -310,104 +162,72 @@ export default function MapPage() {
       <main className="container mx-auto max-w-7xl px-4 sm:px-6 py-4 sm:py-6 space-y-4">
         {/* Overview metrics */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <Card>
+          <Card className="bg-slate-900/70 border-slate-700 backdrop-blur-sm">
             <CardContent className="p-4">
-              <div className="text-xs text-muted-foreground">Готовность проекта</div>
-              <div className="text-2xl font-bold mt-1 tabular-nums">{checklistPct.toFixed(0)}%</div>
-              <div className="text-xs text-muted-foreground mt-1">{checklistDone} из {checklistTotal}</div>
+              <div className="text-xs text-slate-400">Готовность проекта</div>
+              <div className="text-2xl font-bold mt-1 tabular-nums text-cyan-400">
+                {checklistPct.toFixed(0)}%
+              </div>
+              <div className="text-xs text-slate-400 mt-1">
+                {checklistDone} из {checklistTotal}
+              </div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="bg-slate-900/70 border-slate-700 backdrop-blur-sm">
             <CardContent className="p-4">
-              <div className="text-xs text-muted-foreground">Компонентов</div>
-              <div className="text-2xl font-bold mt-1 tabular-nums">{Object.keys(data?.components || {}).length}</div>
-              <div className="text-xs text-muted-foreground mt-1">подсистем</div>
+              <div className="text-xs text-slate-400">Компонентов</div>
+              <div className="text-2xl font-bold mt-1 tabular-nums text-violet-400">
+                {Object.keys(data?.components || {}).length}
+              </div>
+              <div className="text-xs text-slate-400 mt-1">подсистем</div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="bg-slate-900/70 border-slate-700 backdrop-blur-sm">
             <CardContent className="p-4">
-              <div className="text-xs text-muted-foreground">БД: записей</div>
-              <div className="text-2xl font-bold mt-1 tabular-nums">
+              <div className="text-xs text-slate-400">БД: записей</div>
+              <div className="text-2xl font-bold mt-1 tabular-nums text-emerald-400">
                 {data?.components.database?.counts
-                  ? data.components.database.counts.trades + data.components.database.counts.signals + data.components.database.counts.logs
+                  ? data.components.database.counts.trades +
+                    data.components.database.counts.signals +
+                    data.components.database.counts.logs
                   : "—"}
               </div>
-              <div className="text-xs text-muted-foreground mt-1">trades + signals + logs</div>
+              <div className="text-xs text-slate-400 mt-1">trades + signals + logs</div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="bg-slate-900/70 border-slate-700 backdrop-blur-sm">
             <CardContent className="p-4">
-              <div className="text-xs text-muted-foreground">Последняя проверка</div>
-              <div className="text-sm font-semibold mt-1 tabular-nums">
+              <div className="text-xs text-slate-400">Последняя проверка</div>
+              <div className="text-sm font-semibold mt-1 tabular-nums text-slate-100">
                 {data ? new Date(data.timestamp).toLocaleTimeString() : "—"}
               </div>
-              <div className="text-xs text-muted-foreground mt-1">обновляется каждые 15 сек</div>
+              <div className="text-xs text-slate-400 mt-1">обновляется каждые 15 сек</div>
             </CardContent>
           </Card>
         </div>
 
         {error && (
           <Alert className="border-red-500/20 bg-red-500/5">
-            <AlertTriangle className="h-4 w-4 text-red-600" />
-            <AlertTitle className="text-sm text-red-700">Ошибка получения статуса</AlertTitle>
-            <AlertDescription className="text-xs text-red-700/80">{error}</AlertDescription>
+            <AlertTriangle className="h-4 w-4 text-red-400" />
+            <AlertTitle className="text-sm text-red-300">Ошибка получения статуса</AlertTitle>
+            <AlertDescription className="text-xs text-red-300/80">{error}</AlertDescription>
           </Alert>
         )}
 
-        {/* Mind map */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base font-semibold flex items-center gap-2">
-              <Boxes className="h-4 w-4" />
-              Архитектура проекта
-            </CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Зелёный — работает, жёлтый — ожидает настройки, красный — ошибка/IP-бан
-            </p>
-          </CardHeader>
-          <CardContent>
-            {loading && !data ? (
-              <Skeleton className="h-96 w-full" />
-            ) : mermaidError ? (
-              <Alert className="border-amber-600/20 bg-amber-500/5">
-                <AlertTriangle className="h-4 w-4 text-amber-600" />
-                <AlertTitle className="text-sm text-amber-700">
-                  Mind map временно недоступен
-                </AlertTitle>
-                <AlertDescription className="text-xs text-amber-700/80 space-y-1">
-                  <p>Ошибка рендера Mermaid: {mermaidError}</p>
-                  <p className="mt-2">
-                    Не переживай — все компоненты и статусы показаны ниже в карточках.
-                    Mind map — это просто визуализация, остальная информация доступна.
-                  </p>
-                </AlertDescription>
-              </Alert>
-            ) : mermaidSvg ? (
-              <div
-                ref={containerRef}
-                className="w-full overflow-x-auto flex justify-center"
-                dangerouslySetInnerHTML={{ __html: mermaidSvg }}
-                style={{ minHeight: 400 }}
-              />
-            ) : (
-              <Skeleton className="h-96 w-full" />
-            )}
-          </CardContent>
-        </Card>
+        {/* Interactive graph */}
+        <InteractiveGraph />
 
         {/* Component cards */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base font-semibold flex items-center gap-2">
-              <FileJson className="h-4 w-4" />
-              Компоненты системы
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+        <Card className="bg-slate-900/70 border-slate-700 backdrop-blur-sm">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Server className="h-4 w-4 text-cyan-400" />
+              <h3 className="text-base font-semibold text-slate-100">Компоненты системы</h3>
+            </div>
             {loading && !data ? (
               <div className="space-y-2">
                 {Array.from({ length: 5 }).map((_, i) => (
-                  <Skeleton key={i} className="h-20 w-full" />
+                  <Skeleton key={i} className="h-20 w-full bg-slate-800" />
                 ))}
               </div>
             ) : (
@@ -418,55 +238,117 @@ export default function MapPage() {
                     className={`border rounded-lg p-3 ${statusBg(comp.status)}`}
                   >
                     <div className="flex items-center justify-between gap-2 mb-2">
-                      <h3 className="text-sm font-semibold capitalize flex items-center gap-1.5">
+                      <h4 className="text-sm font-semibold capitalize text-slate-100 flex items-center gap-1.5">
                         {statusIcon(comp.status)}
-                        {key === "binance" ? "Binance API" : key === "telegram" ? "Telegram" : key === "database" ? "Database" : key === "worker" ? "Worker" : "Trading"}
-                      </h3>
-                      <Badge variant="outline" className="text-[10px]">
-                        {comp.status === "ok" ? "OK" : comp.status === "warning" ? "WAIT" : comp.status === "banned" ? "BAN" : "ERR"}
+                        {key === "binance"
+                          ? "Binance API"
+                          : key === "telegram"
+                          ? "Telegram"
+                          : key === "database"
+                          ? "Database"
+                          : key === "worker"
+                          ? "Worker"
+                          : "Trading"}
+                      </h4>
+                      <Badge
+                        variant="outline"
+                        className="text-[10px]"
+                        style={{
+                          color:
+                            comp.status === "ok"
+                              ? "#34d399"
+                              : comp.status === "warning"
+                              ? "#fbbf24"
+                              : "#f87171",
+                          borderColor:
+                            comp.status === "ok"
+                              ? "rgba(52, 211, 153, 0.4)"
+                              : comp.status === "warning"
+                              ? "rgba(251, 191, 36, 0.4)"
+                              : "rgba(248, 113, 113, 0.4)",
+                        }}
+                      >
+                        {comp.status === "ok"
+                          ? "OK"
+                          : comp.status === "warning"
+                          ? "WAIT"
+                          : comp.status === "banned"
+                          ? "BAN"
+                          : "ERR"}
                       </Badge>
                     </div>
-                    <p className="text-xs text-muted-foreground mb-2">{comp.statusLabel}</p>
+                    <p className="text-xs text-slate-400 mb-2">{comp.statusLabel}</p>
 
                     {/* Дополнительные детали */}
                     {key === "binance" && comp.configured && (
-                      <div className="space-y-0.5 text-[11px] text-muted-foreground">
-                        <div>Mode: <span className="font-mono">{comp.mode}</span></div>
+                      <div className="space-y-0.5 text-[11px] text-slate-400">
+                        <div>
+                          Mode: <span className="font-mono text-slate-300">{comp.mode}</span>
+                        </div>
                         {comp.latencyMs !== undefined && (
-                          <div>Latency: <span className="tabular-nums">{comp.latencyMs}ms</span></div>
+                          <div>
+                            Latency: <span className="tabular-nums text-slate-300">{comp.latencyMs}ms</span>
+                          </div>
                         )}
                       </div>
                     )}
                     {key === "telegram" && (
-                      <div className="space-y-0.5 text-[11px] text-muted-foreground">
-                        <div>Method: <span className="font-mono">{comp.method}</span></div>
+                      <div className="space-y-0.5 text-[11px] text-slate-400">
+                        <div>
+                          Method: <span className="font-mono text-slate-300">{comp.method}</span>
+                        </div>
                         {comp.me?.username && (
-                          <div>User: <span className="font-mono">@{comp.me.username}</span></div>
+                          <div>
+                            User: <span className="font-mono text-slate-300">@{comp.me.username}</span>
+                          </div>
                         )}
                       </div>
                     )}
                     {key === "database" && comp.connected && (
-                      <div className="space-y-0.5 text-[11px] text-muted-foreground">
-                        <div>Type: <span className="font-mono">{comp.type}</span></div>
+                      <div className="space-y-0.5 text-[11px] text-slate-400">
+                        <div>
+                          Type: <span className="font-mono text-slate-300">{comp.type}</span>
+                        </div>
                         <div className="grid grid-cols-2 gap-1 mt-1">
-                          <div>Trades: <span className="tabular-nums">{comp.counts.trades}</span></div>
-                          <div>Signals: <span className="tabular-nums">{comp.counts.signals}</span></div>
-                          <div>Settings: <span className="tabular-nums">{comp.counts.settings}</span></div>
-                          <div>Logs: <span className="tabular-nums">{comp.counts.logs}</span></div>
+                          <div>
+                            Trades: <span className="tabular-nums text-slate-300">{comp.counts.trades}</span>
+                          </div>
+                          <div>
+                            Signals: <span className="tabular-nums text-slate-300">{comp.counts.signals}</span>
+                          </div>
+                          <div>
+                            Settings: <span className="tabular-nums text-slate-300">{comp.counts.settings}</span>
+                          </div>
+                          <div>
+                            Logs: <span className="tabular-nums text-slate-300">{comp.counts.logs}</span>
+                          </div>
                         </div>
                       </div>
                     )}
                     {key === "worker" && (
-                      <div className="space-y-0.5 text-[11px] text-muted-foreground">
-                        <div>Poll: <span className="font-mono">{comp.pollIntervalSec}s</span></div>
-                        <div>Check: <span className="font-mono">{comp.checkIntervalSec}s</span></div>
+                      <div className="space-y-0.5 text-[11px] text-slate-400">
+                        <div>
+                          Poll: <span className="font-mono text-slate-300">{comp.pollIntervalSec}s</span>
+                        </div>
+                        <div>
+                          Check: <span className="font-mono text-slate-300">{comp.checkIntervalSec}s</span>
+                        </div>
                       </div>
                     )}
                     {key === "trading" && (
-                      <div className="space-y-0.5 text-[11px] text-muted-foreground">
-                        <div>Leverage: <span className="font-mono">{comp.leverage}x</span></div>
-                        <div>Position: <span className="font-mono">{comp.positionSizePct}%</span></div>
-                        <div>TP/SL: <span className="font-mono">+{comp.takeProfitPct}% / -{comp.stopLossPct}%</span></div>
+                      <div className="space-y-0.5 text-[11px] text-slate-400">
+                        <div>
+                          Leverage: <span className="font-mono text-slate-300">{comp.leverage}x</span>
+                        </div>
+                        <div>
+                          Position: <span className="font-mono text-slate-300">{comp.positionSizePct}%</span>
+                        </div>
+                        <div>
+                          TP/SL:{" "}
+                          <span className="font-mono text-slate-300">
+                            +{comp.takeProfitPct}% / -{comp.stopLossPct}%
+                          </span>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -477,24 +359,25 @@ export default function MapPage() {
         </Card>
 
         {/* Checklist */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base font-semibold flex items-center gap-2">
-              <ListChecks className="h-4 w-4" />
-              Чек-лист готовности
-              <Badge variant="secondary" className="text-xs ml-auto">
+        <Card className="bg-slate-900/70 border-slate-700 backdrop-blur-sm">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 mb-1">
+              <ListChecks className="h-4 w-4 text-cyan-400" />
+              <h3 className="text-base font-semibold text-slate-100">Чек-лист готовности</h3>
+              <Badge
+                variant="secondary"
+                className="text-xs ml-auto bg-slate-800 text-slate-300 border border-slate-700"
+              >
                 {checklistDone} / {checklistTotal}
               </Badge>
-            </CardTitle>
-            <p className="text-xs text-muted-foreground">
+            </div>
+            <p className="text-xs text-slate-400 mb-3">
               Что нужно для полноценной работы торгового бота
             </p>
-          </CardHeader>
-          <CardContent>
             {loading && !data ? (
               <div className="space-y-2">
                 {Array.from({ length: 8 }).map((_, i) => (
-                  <Skeleton key={i} className="h-10 w-full" />
+                  <Skeleton key={i} className="h-10 w-full bg-slate-800" />
                 ))}
               </div>
             ) : (
@@ -507,19 +390,19 @@ export default function MapPage() {
                     <div className="mt-0.5">{statusIcon(item.status)}</div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <h4 className="text-sm font-medium">{item.label}</h4>
+                        <h4 className="text-sm font-medium text-slate-100">{item.label}</h4>
                         {item.action && (
                           <a
                             href={item.action}
                             target="_blank"
                             rel="noreferrer"
-                            className="text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5 underline underline-offset-2"
+                            className="text-[11px] text-slate-400 hover:text-cyan-400 inline-flex items-center gap-0.5 underline underline-offset-2"
                           >
                             открыть <ExternalLink className="h-2.5 w-2.5" />
                           </a>
                         )}
                       </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">{item.description}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">{item.description}</p>
                     </div>
                   </div>
                 ))}
@@ -527,56 +410,13 @@ export default function MapPage() {
             )}
           </CardContent>
         </Card>
-
-        {/* Architecture flow */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base font-semibold flex items-center gap-2">
-              <Network className="h-4 w-4" />
-              Поток данных
-            </CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Как сигнал превращается в сделку
-            </p>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-col md:flex-row gap-2 items-stretch overflow-x-auto">
-              {[
-                { step: "1", title: "Telegram", subtitle: "@cryptoalr", desc: "Парсинг новых сообщений через MTProto каждые 20 сек", icon: "📡" },
-                { step: "2", title: "Parser", subtitle: "extract XXXUSDT", desc: "Извлечение symbol, price, % изменения из текста", icon: "🔍" },
-                { step: "3", title: "Worker", subtitle: "decision", desc: "Проверка: isPumpSignal? trading enabled?", icon: "⚙️" },
-                { step: "4", title: "Binance API", subtitle: "open LONG", desc: "setLeverage → placeMarketOrder (BUY)", icon: "📈" },
-                { step: "5", title: "Database", subtitle: "Turso/libSQL", desc: "Сохранение Trade со статусом OPEN", icon: "💾" },
-                { step: "6", title: "Monitor", subtitle: "TP/SL check", desc: "Каждые 5 сек проверка цены, закрытие по TP/SL", icon: "🔁" },
-                { step: "7", title: "UI Dashboard", subtitle: "real-time", desc: "Отображение баланса, сделок, статистики, графиков", icon: "📊" },
-              ].map((s, i, arr) => (
-                <div key={s.step} className="flex flex-col md:flex-row gap-2 items-stretch flex-1 min-w-[180px]">
-                  <div className="border rounded-md p-3 bg-muted/30 flex-1">
-                    <div className="flex items-center justify-between mb-1">
-                      <Badge variant="outline" className="text-[10px] tabular-nums">{s.step}</Badge>
-                      <span className="text-lg">{s.icon}</span>
-                    </div>
-                    <h4 className="text-sm font-semibold">{s.title}</h4>
-                    <p className="text-[10px] text-muted-foreground font-mono">{s.subtitle}</p>
-                    <p className="text-[11px] text-muted-foreground mt-1.5">{s.desc}</p>
-                  </div>
-                  {i < arr.length - 1 && (
-                    <div className="hidden md:flex items-center text-muted-foreground px-1">
-                      →
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
       </main>
 
       {/* Footer */}
-      <footer className="border-t mt-8">
-        <div className="container mx-auto max-w-7xl px-4 sm:px-6 py-3 text-center text-xs text-muted-foreground">
+      <footer className="border-t border-slate-800 mt-8">
+        <div className="container mx-auto max-w-7xl px-4 sm:px-6 py-3 text-center text-xs text-slate-500">
           Карта проекта ·{" "}
-          <Link href="/" className="hover:text-foreground underline underline-offset-2">
+          <Link href="/" className="hover:text-cyan-400 underline underline-offset-2">
             вернуться к дашборду
           </Link>
         </div>
