@@ -1,13 +1,13 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Vercel сам управляет output, не используем standalone
-  // (локально можно собрать с standalone через `bun run build:standalone`)
+  // Standalone для Docker/VPS деплоя (Vercel игнорирует это)
+  output: "standalone",
   typescript: {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
-  // Для Prisma + Turso на Vercel serverless
+  // Для Prisma + Turso
   experimental: {
     serverActions: {
       bodySizeLimit: "2mb",
